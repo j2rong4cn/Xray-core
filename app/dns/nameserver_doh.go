@@ -166,19 +166,19 @@ func (s *DoHNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 
 			b, err := dns.PackMessage(r.msg)
 			if err != nil {
-				errors.LogErrorInner(ctx, err, "failed to pack dns query for ", domain)
+				errors.LogErrorInner(ctx, err, "failed to pack dns query for ", domain, " ", r.reqType)
 				noResponseErrCh <- err
 				return
 			}
 			resp, err := s.dohHTTPSContext(dnsCtx, b.Bytes())
 			if err != nil {
-				errors.LogErrorInner(ctx, err, "failed to retrieve response for ", domain)
+				errors.LogErrorInner(ctx, err, "failed to retrieve response for ", domain, " ", r.reqType)
 				noResponseErrCh <- err
 				return
 			}
 			rec, err := parseResponse(resp)
 			if err != nil {
-				errors.LogErrorInner(ctx, err, "failed to handle DOH response for ", domain)
+				errors.LogErrorInner(ctx, err, "failed to handle DOH response for ", domain, " ", r.reqType)
 				noResponseErrCh <- err
 				return
 			}
