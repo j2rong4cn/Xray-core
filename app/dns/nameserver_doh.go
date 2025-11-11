@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	go_errors "errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -181,7 +182,9 @@ func (s *DoHNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 			}
 			resp, err := s.dohHTTPSContext(dnsCtx, b.Bytes())
 			if err != nil {
-				errors.LogErrorInner(ctx, err, "failed to retrieve response for ", fqdn)
+				if !go_errors.Is(err, context.Canceled) {
+					errors.LogErrorInner(ctx, err, "failed to retrieve response for ", fqdn)
+				}
 				if noResponseErrCh != nil {
 					noResponseErrCh <- err
 				}
