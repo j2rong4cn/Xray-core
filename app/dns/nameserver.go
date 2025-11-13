@@ -35,9 +35,6 @@ func (w *mphMatcherWrapper) String() string {
 type Server interface {
 	// Name of the Client.
 	Name() string
-
-	IsDisableCache() bool
-
 	// QueryIP sends IP queries to its configured server.
 	QueryIP(ctx context.Context, domain string, option dns.IPOption) ([]net.IP, uint32, error)
 }

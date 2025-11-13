@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"time"
 
 	utls "github.com/refraction-networking/utls"
 	"github.com/xtls/xray-core/common"
@@ -116,11 +115,6 @@ func (s *DoHNameServer) Name() string {
 	return s.cacheController.name
 }
 
-// IsDisableCache implements Server.
-func (s *DoHNameServer) IsDisableCache() bool {
-	return s.cacheController.disableCache
-}
-
 func (s *DoHNameServer) newReqID() uint16 {
 	return 0
 }
@@ -146,13 +140,6 @@ func (s *DoHNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 	// Although DoH server like 1.1.1.1 will pad the response to Block-Length 468, at least it is better than no padding for response at all
 	reqs := buildReqMsgs(fqdn, option, s.newReqID, genEDNS0Options(s.clientIP, int(crypto.RandBetween(100, 300))))
 
-	var deadline time.Time
-	if d, ok := ctx.Deadline(); ok {
-		deadline = d
-	} else {
-		deadline = time.Now().Add(time.Second * 5)
-	}
-
 	for _, req := range reqs {
 		go func(r *dnsRequest) {
 			// generate new context for each req, using same context
@@ -171,10 +158,6 @@ func (s *DoHNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 
 			// forced to use mux for DOH
 			// dnsCtx = session.ContextWithMuxPreferred(dnsCtx, true)
-
-			var cancel context.CancelFunc
-			dnsCtx, cancel = context.WithDeadline(dnsCtx, deadline)
-			defer cancel()
 
 			b, err := dns.PackMessage(r.msg)
 			if err != nil {

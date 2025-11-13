@@ -62,11 +62,6 @@ func (s *QUICNameServer) Name() string {
 	return s.cacheController.name
 }
 
-// IsDisableCache implements Server.
-func (s *QUICNameServer) IsDisableCache() bool {
-	return s.cacheController.disableCache
-}
-
 func (s *QUICNameServer) newReqID() uint16 {
 	return 0
 }
@@ -79,13 +74,6 @@ func (s *QUICNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- e
 	errors.LogInfo(ctx, s.Name(), " querying: ", fqdn)
 
 	reqs := buildReqMsgs(fqdn, option, s.newReqID, genEDNS0Options(s.clientIP, 0))
-
-	var deadline time.Time
-	if d, ok := ctx.Deadline(); ok {
-		deadline = d
-	} else {
-		deadline = time.Now().Add(time.Second * 5)
-	}
 
 	for _, req := range reqs {
 		go func(r *dnsRequest) {
@@ -102,10 +90,6 @@ func (s *QUICNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- e
 				Protocol:       "quic",
 				SkipDNSResolve: true,
 			})
-
-			var cancel context.CancelFunc
-			dnsCtx, cancel = context.WithDeadline(dnsCtx, deadline)
-			defer cancel()
 
 			b, err := dns.PackMessage(r.msg)
 			if err != nil {
