@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"net/url"
 	"sync/atomic"
-	"time"
 
 	"github.com/xtls/xray-core/common/buf"
 	"github.com/xtls/xray-core/common/errors"
@@ -108,13 +107,6 @@ func (s *TCPNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 
 	reqs := buildReqMsgs(fqdn, option, s.newReqID, genEDNS0Options(s.clientIP, 0))
 
-	var deadline time.Time
-	if d, ok := ctx.Deadline(); ok {
-		deadline = d
-	} else {
-		deadline = time.Now().Add(time.Second * 5)
-	}
-
 	for _, req := range reqs {
 		go func(r *dnsRequest) {
 			dnsCtx := ctx
@@ -127,10 +119,6 @@ func (s *TCPNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 				Protocol:       "dns",
 				SkipDNSResolve: true,
 			})
-
-			var cancel context.CancelFunc
-			dnsCtx, cancel = context.WithDeadline(dnsCtx, deadline)
-			defer cancel()
 
 			b, err := dns.PackMessage(r.msg)
 			if err != nil {
