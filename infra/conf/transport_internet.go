@@ -820,9 +820,6 @@ func (c *TLSConfig) Build() (proto.Message, error) {
 	if c.VerifyPeerCertByName != "" {
 		for v := range strings.SplitSeq(c.VerifyPeerCertByName, ",") {
 			v = strings.TrimSpace(v)
-			if v == "" {
-				continue
-			}
 			config.VerifyPeerCertByName = append(config.VerifyPeerCertByName, v)
 		}
 	}
