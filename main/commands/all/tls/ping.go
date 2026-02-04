@@ -1,6 +1,7 @@
 package tls
 
 import (
+	"context"
 	gotls "crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"text/tabwriter"
 
+	"github.com/apernet/quic-go"
 	utls "github.com/refraction-networking/utls"
 
 	"github.com/xtls/xray-core/common/utils"
@@ -19,7 +21,7 @@ import (
 
 // cmdPing is the tls ping command
 var cmdPing = &base.Command{
-	UsageLine: "{{.Exec}} tls ping [-ip <ip>] <domain>",
+	UsageLine: "{{.Exec}} tls ping [-ip <ip>] [-h3] <domain>",
 	Short:     "Ping the domain with TLS handshake",
 	Long: `
 Ping the domain with TLS handshake.
@@ -28,6 +30,8 @@ Arguments:
 
 	-ip
 		The IP address of the domain.
+	-h3
+		Use HTTP/3 (QUIC) for the TLS handshake.
 `,
 }
 
@@ -36,6 +40,7 @@ func init() {
 }
 
 var pingIPStr = cmdPing.Flag.String("ip", "", "")
+var h3 = cmdPing.Flag.Bool("h3", false, "")
 
 func executePing(cmd *base.Command, args []string) {
 	if cmdPing.Flag.NArg() < 1 {
@@ -71,7 +76,30 @@ func executePing(cmd *base.Command, args []string) {
 
 	fmt.Println("-------------------")
 	fmt.Println("Pinging without SNI")
-	{
+	if *h3 {
+		udpConn, err := net.ListenUDP("udp", nil)
+		if err != nil {
+			base.Fatalf("Failed to listen udp: %s", err)
+		}
+		remoteAddr := &net.UDPAddr{IP: ip, Port: TargetPort}
+		quicConn, err := quic.DialEarly(context.Background(), udpConn, remoteAddr, &gotls.Config{
+			InsecureSkipVerify: true,
+			NextProtos:         []string{"h3"},
+			MaxVersion:         gotls.VersionTLS13,
+			MinVersion:         gotls.VersionTLS13,
+		}, nil)
+		if err != nil {
+			fmt.Println("Handshake failure: ", err)
+		} else {
+			fmt.Println("Handshake succeeded")
+			state := quicConn.ConnectionState()
+			printTLSStateDetail(tabWriter, state.TLS.Version, state.TLS.CurveID)
+			printCertificates(tabWriter, state.TLS.PeerCertificates)
+			tabWriter.Flush()
+			quicConn.CloseWithError(0, "")
+		}
+		udpConn.Close()
+	} else {
 		tcpConn, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: ip, Port: TargetPort})
 		if err != nil {
 			base.Fatalf("Failed to dial tcp: %s", err)
@@ -87,8 +115,10 @@ func executePing(cmd *base.Command, args []string) {
 			fmt.Println("Handshake failure: ", err)
 		} else {
 			fmt.Println("Handshake succeeded")
-			printTLSConnDetail(tabWriter, tlsConn)
-			printCertificates(tabWriter, tlsConn.ConnectionState().PeerCertificates)
+			state := tlsConn.ConnectionState()
+			curveID := *utils.AccessField[utls.CurveID](tlsConn.Conn, "curveID")
+			printTLSStateDetail(tabWriter, state.Version, gotls.CurveID(curveID))
+			printCertificates(tabWriter, state.PeerCertificates)
 			tabWriter.Flush()
 		}
 		tlsConn.Close()
@@ -96,7 +126,30 @@ func executePing(cmd *base.Command, args []string) {
 
 	fmt.Println("-------------------")
 	fmt.Println("Pinging with SNI")
-	{
+	if *h3 {
+		udpConn, err := net.ListenUDP("udp", nil)
+		if err != nil {
+			base.Fatalf("Failed to listen udp: %s", err)
+		}
+		remoteAddr := &net.UDPAddr{IP: ip, Port: TargetPort}
+		quicConn, err := quic.DialEarly(context.Background(), udpConn, remoteAddr, &gotls.Config{
+			ServerName: domain,
+			NextProtos: []string{"h3"},
+			MaxVersion: gotls.VersionTLS13,
+			MinVersion: gotls.VersionTLS13,
+		}, nil)
+		if err != nil {
+			fmt.Println("Handshake failure: ", err)
+		} else {
+			fmt.Println("Handshake succeeded")
+			state := quicConn.ConnectionState()
+			printTLSStateDetail(tabWriter, state.TLS.Version, state.TLS.CurveID)
+			printCertificates(tabWriter, state.TLS.PeerCertificates)
+			tabWriter.Flush()
+			quicConn.CloseWithError(0, "")
+		}
+		udpConn.Close()
+	} else {
 		tcpConn, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: ip, Port: TargetPort})
 		if err != nil {
 			base.Fatalf("Failed to dial tcp: %s", err)
@@ -112,8 +165,10 @@ func executePing(cmd *base.Command, args []string) {
 			fmt.Println("Handshake failure: ", err)
 		} else {
 			fmt.Println("Handshake succeeded")
-			printTLSConnDetail(tabWriter, tlsConn)
-			printCertificates(tabWriter, tlsConn.ConnectionState().PeerCertificates)
+			state := tlsConn.ConnectionState()
+			curveID := *utils.AccessField[utls.CurveID](tlsConn.Conn, "curveID")
+			printTLSStateDetail(tabWriter, state.Version, gotls.CurveID(curveID))
+			printCertificates(tabWriter, state.PeerCertificates)
 			tabWriter.Flush()
 		}
 		tlsConn.Close()
@@ -124,7 +179,7 @@ func executePing(cmd *base.Command, args []string) {
 }
 
 func printCertificates(tabWriter *tabwriter.Writer, certs []*x509.Certificate) {
-	var leaf *x509.Certificate
+	leaf := certs[0]
 	var CAs []*x509.Certificate
 	var length int
 	for _, cert := range certs {
@@ -147,19 +202,17 @@ func printCertificates(tabWriter *tabwriter.Writer, certs []*x509.Certificate) {
 	}
 }
 
-func printTLSConnDetail(tabWriter *tabwriter.Writer, tlsConn *utls.UConn) {
-	connectionState := tlsConn.ConnectionState()
+func printTLSStateDetail(tabWriter *tabwriter.Writer, version uint16, curveID gotls.CurveID) {
 	var tlsVersion string
-	switch connectionState.Version {
+	switch version {
 	case gotls.VersionTLS13:
 		tlsVersion = "TLS 1.3"
 	case gotls.VersionTLS12:
 		tlsVersion = "TLS 1.2"
 	}
 	fmt.Fprintf(tabWriter, "TLS Version:\t%s\n", tlsVersion)
-	curveID := utils.AccessField[utls.CurveID](tlsConn.Conn, "curveID")
-	if curveID != nil {
-		PostQuantum := (*curveID == utls.X25519MLKEM768)
+	if curveID != 0 {
+		PostQuantum := (curveID == gotls.X25519MLKEM768)
 		fmt.Fprintf(tabWriter, "TLS Post-Quantum key exchange:\t%t (%s)\n", PostQuantum, curveID.String())
 	} else {
 		fmt.Fprintf(tabWriter, "TLS Post-Quantum key exchange:  false (RSA Exchange)\n")
