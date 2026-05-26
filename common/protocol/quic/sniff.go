@@ -72,7 +72,6 @@ func SniffQUIC(b []byte) (*SniffHeader, error) {
 	}
 
 	// Crypto data separated across packets
-	cryptoLen := int32(0)
 	cryptoDataBuf := buf.NewWithSize(32767)
 	defer cryptoDataBuf.Release()
 	cache := buf.New()
@@ -240,12 +239,12 @@ func SniffQUIC(b []byte) (*SniffHeader, error) {
 					return nil, io.ErrUnexpectedEOF
 				}
 				currentCryptoLen := int32(offset + length)
+				cryptoLen := cryptoDataBuf.Len()
 				if cryptoLen < currentCryptoLen {
 					if cryptoDataBuf.Cap() < currentCryptoLen {
 						return nil, io.ErrShortBuffer
 					}
 					cryptoDataBuf.Extend(currentCryptoLen - cryptoLen)
-					cryptoLen = currentCryptoLen
 				}
 				if _, err := buffer.Read(cryptoDataBuf.BytesRange(offset, currentCryptoLen)); err != nil { // Field: Crypto Data
 					return nil, io.ErrUnexpectedEOF
@@ -272,7 +271,7 @@ func SniffQUIC(b []byte) (*SniffHeader, error) {
 		}
 
 		tlsHdr := &ptls.SniffHeader{}
-		err = ptls.ReadClientHello(cryptoDataBuf.BytesRange(0, cryptoLen), tlsHdr)
+		err = ptls.ReadClientHello(cryptoDataBuf.Bytes(), tlsHdr)
 		if err != nil {
 			// The crypto data may have not been fully recovered in current packets,
 			// So we continue to sniff rest packets.
