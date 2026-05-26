@@ -35,7 +35,7 @@ func queryIP(ctx context.Context, s CachedNameserver, domain string, option dns.
 				if cache.serveStale && (cache.serveExpiredTTL == 0 || cache.serveExpiredTTL < ttl) {
 					errors.LogDebugInner(ctx, err, cache.name, " cache OPTIMISTE ", fqdn, " -> ", ips)
 					log.Record(&log.DNSLog{Server: cache.name, Domain: fqdn, Result: ips, Status: log.DNSCacheOptimiste, Elapsed: 0, Error: err})
-					go pull(ctx, s, fqdn, option)
+					go fetch(ctx, s, fqdn, option, true)
 					return ips, 1, err
 				}
 			}
@@ -44,17 +44,10 @@ func queryIP(ctx context.Context, s CachedNameserver, domain string, option dns.
 		errors.LogDebug(ctx, "DNS cache is disabled. Querying IP for ", fqdn, " at ", cache.name)
 	}
 
-	return fetch(ctx, s, fqdn, option)
+	return fetch(ctx, s, fqdn, option, false)
 }
 
-func pull(ctx context.Context, s CachedNameserver, fqdn string, option dns.IPOption) {
-	nctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 8*time.Second)
-	defer cancel()
-
-	fetch(nctx, s, fqdn, option)
-}
-
-func fetch(ctx context.Context, s CachedNameserver, fqdn string, option dns.IPOption) ([]net.IP, uint32, error) {
+func fetch(ctx context.Context, s CachedNameserver, fqdn string, option dns.IPOption, backgroundQuery bool) ([]net.IP, uint32, error) {
 	key := fqdn
 	switch {
 	case option.IPv4Enable && option.IPv6Enable:
@@ -66,6 +59,15 @@ func fetch(ctx context.Context, s CachedNameserver, fqdn string, option dns.IPOp
 	}
 
 	v, _, _ := s.getCacheController().requestGroup.Do(key, func() (any, error) {
+		if !backgroundQuery {
+			return doFetch(ctx, s, fqdn, option), nil
+		}
+		deadline, deadlineExists := ctx.Deadline()
+		if !deadlineExists {
+			deadline = time.Now().Add(time.Second * 5)
+		}
+		ctx, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
+		defer cancel()
 		return doFetch(ctx, s, fqdn, option), nil
 	})
 	ret := v.(result)
