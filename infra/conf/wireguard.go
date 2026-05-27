@@ -3,6 +3,7 @@ package conf
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"runtime"
 	"strings"
 
 	"github.com/xtls/xray-core/common/errors"
@@ -51,7 +52,7 @@ func (c *WireGuardPeerConfig) Build() (proto.Message, error) {
 type WireGuardConfig struct {
 	IsClient bool `json:""`
 
-	NoKernelTun    bool                   `json:"noKernelTun"`
+	NoKernelTun    *bool                  `json:"noKernelTun"`
 	SecretKey      string                 `json:"secretKey"`
 	Address        []string               `json:"address"`
 	Peers          []*WireGuardPeerConfig `json:"peers"`
@@ -118,7 +119,11 @@ func (c *WireGuardConfig) Build() (proto.Message, error) {
 	}
 
 	config.IsClient = c.IsClient
-	config.NoKernelTun = c.NoKernelTun
+	if c.NoKernelTun != nil {
+		config.NoKernelTun = *c.NoKernelTun
+	} else {
+		config.NoKernelTun = runtime.GOOS != "linux"
+	}
 
 	return config, nil
 }
