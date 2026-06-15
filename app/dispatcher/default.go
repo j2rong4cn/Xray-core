@@ -194,9 +194,8 @@ func WrapLink(ctx context.Context, policyManager policy.Manager, statsManager st
 		user = sessionInbound.User
 	}
 
-	link.Reader = &buf.TimeoutWrapperReader{Reader: link.Reader}
-
 	if user != nil && len(user.Email) > 0 {
+		link.Reader = &buf.TimeoutWrapperReader{Reader: link.Reader}
 		p := policyManager.ForLevel(user.Level)
 		if p.Stats.UserUplink {
 			name := "user>>>" + user.Email + ">>>traffic>>>uplink"
@@ -216,6 +215,8 @@ func WrapLink(ctx context.Context, policyManager policy.Manager, statsManager st
 		if p.Stats.UserOnline {
 			trackOnlineIP(ctx, statsManager, user.Email, sessionInbound.Source.Address.String())
 		}
+	} else if _, ok := link.Reader.(buf.TimeoutReader); !ok {
+		link.Reader = &buf.TimeoutWrapperReader{Reader: link.Reader}
 	}
 
 	return link
