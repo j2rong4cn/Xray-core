@@ -187,6 +187,7 @@ func (s *DoHNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 			}
 			resp, err := s.dohHTTPSContext(dnsCtx, b.Bytes())
 			if err != nil {
+				b.Release()
 				errors.LogErrorInner(ctx, err, "failed to retrieve response for ", fqdn)
 				if noResponseErrCh != nil {
 					noResponseErrCh <- err
@@ -194,6 +195,7 @@ func (s *DoHNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 				return
 			}
 			rec, err := parseResponse(resp)
+			b.Release()
 			if err != nil {
 				errors.LogErrorInner(ctx, err, "failed to handle DOH response for ", fqdn)
 				if noResponseErrCh != nil {
@@ -228,10 +230,14 @@ func (s *DoHNameServer) dohHTTPSContext(ctx context.Context, b []byte) ([]byte, 
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		io.Copy(io.Discard, resp.Body) // flush resp.Body so that the conn is reusable
-		return nil, fmt.Errorf("DOH server returned code %d", resp.StatusCode)
+		return nil, fmt.Errorf("%s returned code %d", s.Name(), resp.StatusCode)
 	}
-
-	return io.ReadAll(resp.Body)
+	body.Reset()
+	_, err = body.ReadFrom(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return body.Bytes(), nil
 }
 
 // QueryIP implements Server.
