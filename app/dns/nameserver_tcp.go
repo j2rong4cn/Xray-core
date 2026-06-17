@@ -1,7 +1,6 @@
 package dns
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"net/url"
@@ -142,6 +141,7 @@ func (s *TCPNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 				}
 				return
 			}
+			defer b.Release()
 
 			conn, err := s.dial(dnsCtx)
 			if err != nil {
@@ -153,6 +153,7 @@ func (s *TCPNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 			}
 			defer conn.Close()
 			dnsReqBuf := buf.New()
+			defer dnsReqBuf.Release()
 			err = binary.Write(dnsReqBuf, binary.BigEndian, uint16(b.Len()))
 			if err != nil {
 				errors.LogErrorInner(ctx, err, "binary write failed")
@@ -179,10 +180,9 @@ func (s *TCPNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 				}
 				return
 			}
-			dnsReqBuf.Release()
 
-			respBuf := buf.New()
-			defer respBuf.Release()
+			dnsReqBuf.Clear()
+			respBuf := dnsReqBuf
 			n, err := respBuf.ReadFullFrom(conn, 2)
 			if err != nil && n == 0 {
 				errors.LogErrorInner(ctx, err, "failed to read response length")
@@ -192,7 +192,7 @@ func (s *TCPNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 				return
 			}
 			var length uint16
-			err = binary.Read(bytes.NewReader(respBuf.Bytes()), binary.BigEndian, &length)
+			err = binary.Read(respBuf, binary.BigEndian, &length)
 			if err != nil {
 				errors.LogErrorInner(ctx, err, "failed to parse response length")
 				if noResponseErrCh != nil {
@@ -211,6 +211,7 @@ func (s *TCPNameServer) sendQuery(ctx context.Context, noResponseErrCh chan<- er
 			}
 
 			rec, err := parseResponse(respBuf.Bytes())
+			respBuf.Release()
 			if err != nil {
 				errors.LogErrorInner(ctx, err, "failed to parse DNS over TCP response")
 				if noResponseErrCh != nil {

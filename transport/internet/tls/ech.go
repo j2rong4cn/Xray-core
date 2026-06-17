@@ -233,7 +233,8 @@ func dnsQuery(server string, domain string, sockopt *internet.SocketConfig) ([]b
 			}
 			client, _ = clientForECHDOH.LoadOrStore(serverKey, c)
 		}
-		req, err := http.NewRequest("POST", server, bytes.NewReader(msg))
+		body := bytes.NewBuffer(msg)
+		req, err := http.NewRequest("POST", server, body)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -250,14 +251,16 @@ func dnsQuery(server string, domain string, sockopt *internet.SocketConfig) ([]b
 			return nil, 0, err
 		}
 		defer resp.Body.Close()
-		respBody, err := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			io.Copy(io.Discard, resp.Body) // flush resp.Body so that the conn is reusable
+			return nil, 0, errors.New("query failed with response code:", resp.StatusCode)
+		}
+		body.Reset()
+		_, err = body.ReadFrom(resp.Body)
 		if err != nil {
 			return nil, 0, err
 		}
-		if resp.StatusCode != http.StatusOK {
-			return nil, 0, errors.New("query failed with response code:", resp.StatusCode)
-		}
-		dnsResolve = respBody
+		dnsResolve = body.Bytes()
 	} else if strings.HasPrefix(server, "udp://") { // for classic udp dns server
 		udpServerURL, err := url.Parse(server)
 		if err != nil {
